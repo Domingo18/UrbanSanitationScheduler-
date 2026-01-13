@@ -1,0 +1,11 @@
+[
+  {
+    "address": "123 W 45 St, Manhattan",
+    "pickup_days": ["Monday", "Thursday"]
+  },
+  {
+    "address": "200 E 34 St, Manhattan",
+    "pickup_days": ["Tuesday", "Friday"]
+  }
+]
+
