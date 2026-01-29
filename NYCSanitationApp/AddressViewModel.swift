@@ -11,109 +11,42 @@ import Foundation
 @MainActor
 class AddressViewModel: ObservableObject {
     
-    @Published var addresses: [Address] = []
+    @Published var savedAddresses: [GeoClientAddress] = []
     @Published var errorMessage: String?
     @Published var isLoading: Bool = false
     @Published var geoResult: GeoClientAddress?
-
+    private let savedAddressKey = "saved_geo_address"
+    private let pickUpDays: [PickupDay] = []
     
     
     
-    func loadSample() {
-        
-        isLoading = true
-        
-        defer {
-            isLoading = false
-        }
-        
-        guard let url = Bundle.main.url(forResource: "addresses", withExtension: "json")
-        else {
-            errorMessage = "Failed to load JSON file"
-            print("❌ JSON file not found in bundle")
-            return
-        }
-        
-        print("✅ JSON file found:", url)
-        
-        guard let data = try? Data(contentsOf: url)
-        else {
-            errorMessage = "Failed to read JSON data"
-            print($errorMessage)
-            return
-        }
-        
-        
-        let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        
-        do {
-            let decoded = try decoder.decode([Address].self, from: data)
-            self.addresses = decoded
-            print("✅ Decoded addresses count:", decoded.count)
-            
-        } catch {
-            self.errorMessage = error.localizedDescription
-            print("decoding failed", error)
-        }
-        
-        
-    }
-    func loadFromAPI() async {
-        
-        isLoading = true
-        
-        defer { isLoading = false }
-        
-        guard let url = URL(string: "https://jsonkeeper.com/b/YD8HE")
-        else {
-            errorMessage = "Invalid URL"
-            return
-        }
-        
-        do{
-            let (data, _) = try await URLSession.shared.data(from: url)
-            print("Data recieved", data.count)
-            
-            
-            let decoder = JSONDecoder()
-            decoder.keyDecodingStrategy = .convertFromSnakeCase
-            
-            let decoded = try decoder.decode([Address].self, from: data)
-            self.addresses = decoded
-            print("✅ Decoded addresses count:", decoded.count)
-            
-        } catch {
-            errorMessage = error.localizedDescription
-            print("API Error:", error)
-        }
-    }
-    
+    //parse through the address, and format to use for the API Call
     func parseAddress(_ input: String)
     -> (house: String, street: String, borough: String)? {
 
-        print("I'm parsing: \(input)")
+        
         let cleaned = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { return nil }
 
-        print(cleaned)
+        
         let parts = cleaned.split(separator: ",", maxSplits: 1)
-        print(parts)
+    
         let addressPart = String(parts[0]).trimmingCharacters(in: .whitespaces)
         var boroughPart = parts.count == 2
             ? String(parts[1]).trimmingCharacters(in: .whitespaces)
             : "0"
         
-        switch boroughPart {
-        case "Manhattan":
+        let boroughCleaned = boroughPart.lowercased()
+        switch boroughCleaned {
+        case "manhattan":
             boroughPart = "1"
-        case "Bronx":
+        case "bronx":
             boroughPart = "2"
-        case "Brooklyn":
+        case "brooklyn":
             boroughPart = "3"
-        case "Queens":
+        case "queens":
             boroughPart = "4"
-        case "StatenIsland":
+        case "statenisland":
             boroughPart = "5"
         default:
             boroughPart = "nnnnn"
@@ -137,15 +70,21 @@ class AddressViewModel: ObservableObject {
         )
     }
     
+    
+    //main function to produce an address for the UI to display
     func lookupAddress(_ input: String) async {
+        isLoading = true
+        defer { isLoading = false }
         errorMessage = nil
         geoResult = nil
-        print("I started looking up")
+      
+        //first normalize the address for our call later on
         guard let parsed = parseAddress(input) else {
             errorMessage = "Could not understand address"
             return
         }
 
+        //use our parsed address components to initialize our geocodeAddress call
         do {
             let geo = try await geocodeAddress(
                 houseNumber: parsed.house,
@@ -155,9 +94,10 @@ class AddressViewModel: ObservableObject {
             
             print(geo)
 
+            //set the geoResult variable to our result
             self.geoResult = geo
-
-            print("Sanitation District:", geo.sanitationDistrict ?? "none")
+            //save the address in user defaults for persistance
+            saveAddress(geo)
 
         } catch {
             errorMessage = error.localizedDescription
@@ -170,6 +110,9 @@ class AddressViewModel: ObservableObject {
         street:         String,
         borough:        String
     ) async throws -> GeoClientAddress {
+        
+        //Contruct a URL using an address
+        
         let API_KEY = "bQeThWmZq4t7wXzB"
         let baseURL = "https://geoservice.planning.nyc.gov/geoservice/geoservice.svc/Function_1B?"
         
@@ -187,17 +130,19 @@ class AddressViewModel: ObservableObject {
         guard let url = components?.url else {
             throw URLError(.badURL)
         }
-        print(url)
-
-        let (data, responseCode) = try await URLSession.shared.data(from: url)
-        print(responseCode)
-        
+    
+        // Initriate a async API Call with the contructed URL
+        let (data, _) = try await URLSession.shared.data(from: url)
+         
+        //decode required data from the geoservice function 1B response
         let decoder = JSONDecoder()
         
         let response = try decoder.decode(GeoClientResponse.self, from: data)
         let d = response.display
 
+        // parse and intialize a geoclientaddress object using the data from our api response
         let address = GeoClientAddress(
+            id: UUID(),
             houseNumber: d.out_hnd?
                 .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) ?? "",
             streetName: d.out_stname1?
@@ -214,13 +159,57 @@ class AddressViewModel: ObservableObject {
                 .trimmingCharacters(in: CharacterSet.whitespacesAndNewlines) ?? ""
             
         )
-
         return address
 
     }
     
+    func saveAddress(_ address: GeoClientAddress) {
+        do {
+            var current = savedAddresses
+            current.append(address)
+
+            let data = try JSONEncoder().encode(current)
+            UserDefaults.standard.set(data, forKey: "savedAddresses")
+
+            savedAddresses = current
+        } catch {
+            print("Failed to save addresses:", error)
+        }
+    }
+
+
+    func loadSavedAddresses() {
+        guard let data = UserDefaults.standard.data(forKey: "savedAddresses") else {
+            return
+        }
+
+        do {
+            savedAddresses = try JSONDecoder().decode([GeoClientAddress].self, from: data)
+
+        } catch {
+            print("Failed to load saved addresses:", error)
+        }
+    }
+    
+    func deleteAddress(at offsets: IndexSet) {
+        var current = savedAddresses
+        current.remove(atOffsets: offsets)
+        
+        do {
+            let data = try JSONEncoder().encode(current)
+            UserDefaults.standard.set(data, forKey: "savedAddresses")
+            
+            savedAddresses = current
+        } catch {
+            print("Failed to delete address")
+        }
+    }
+    
+   
+
         
     
+
 }
     
     

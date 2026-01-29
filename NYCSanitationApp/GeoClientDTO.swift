@@ -25,7 +25,8 @@ struct GeoClientDisplay: Decodable {
         let out_san_reg: String?
     }
 
-struct GeoClientAddress {
+struct GeoClientAddress: Codable, Identifiable, Hashable{
+    let id: UUID
     let houseNumber: String
     let streetName: String
     let borough:    String
@@ -33,7 +34,23 @@ struct GeoClientAddress {
     let sanitationTrashSchedule: String?
     let sanitationRecyclingSchedule: String?
     let sanitationLargeItemsSchedule: String?
+    var trashScheduleText: String {
+        sanitationTrashSchedule ?? "N/A"
+    }
+    var recyclingScheduleText: String {
+        sanitationRecyclingSchedule ?? "N/A"
+    }
+    var bulkScheduleText: String {
+        sanitationLargeItemsSchedule ?? "N/A"
+    }
+    
+    
+    
+  
+   
 }
+
+
 
 
 

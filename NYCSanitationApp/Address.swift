@@ -9,10 +9,11 @@ import Foundation
 
 
 struct Address: Codable, Identifiable {
-    let id = UUID()
-    let address: String
-    let pickupDays: [String]
-//    let borough: String
-//    let zip: String
+    let id:                        UUID
+    let address:                 String
+    let sanitationDistrict:      String?
+    let sanitationTrashSchedule: String?
+    let sanitationRecyclingSchedule: String?
+    let sanitationLargeItemsSchedule: String?
     
 }
